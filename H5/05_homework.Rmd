@@ -1,0 +1,373 @@
+---
+title: "SMDS Homework - Block 5"
+author: "E. Fabrici, V. Plesco, L. Arrighi | Group 'D'"
+date: "22th June 2020"
+output:
+  html_document:
+    toc: yes
+  beamer_presentation:
+    highlight: tango
+  include: null
+  ioslides_presentation:
+    highlight: tango
+  pdf_document:
+    highlight: tango
+    keep_tex: yes
+    toc: yes
+  slide_level: 2
+  slidy_presentation:
+    fig.height: 3
+    fig.width: 4
+    highlight: tango
+header-includes:
+- \usepackage{color}
+- \usepackage{graphicx}
+- \usepackage{grffile}
+- \definecolor{Purple}{HTML}{911146}
+- \definecolor{Orange}{HTML}{CF4A30}
+- \setbeamercolor{alerted text}{fg=Orange}
+- \setbeamercolor{frametitle}{bg=Purple}
+institute: University of Trieste, SISSA, ICTP, University of Udine
+graphics: yes
+fontsize: 10pt
+---
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(fig.align = 'center', warning=FALSE, message=FALSE, fig.asp=0.625, dev='png', global.par = TRUE, dev.args=list(pointsize=10), fig.path = 'figs/')
+library(MASS)
+```
+
+```{r setup, include=FALSE}
+library(knitr)
+local({
+  hook_plot = knit_hooks$get('plot')
+  knit_hooks$set(plot = function(x, options) {
+    paste0('\n\n----\n\n', hook_plot(x, options))
+  })
+})
+```
+
+# Homeworks {.tabset}
+
+## Used libraries {.tabset}
+
+```{r}
+library(ggplot2)
+library(lattice)
+library(DAAG)
+```
+
+## BC EXERCISES {.tabset}
+
+### Exercise 3.1 {.tabset}
+
+Suppose one takes independent observations $y_{1},\dots,y_{n}$ from a uniform distributon on the set ${1,2,\dots,N}$, where the upper bound *N* is unknown. Suppose one places a uniform prior for *N* on the values $1,\dots,B$, where *B* is known. Then the posterior probabilities for *N* are given by
+
+$$
+\begin{aligned}
+g(N|y)\propto\frac{1}{N^{n}}, \ y_{(n)} \le N \le B, 
+\end{aligned}
+$$   
+
+where $y_{(n)}$ is the maximum observation. To illustrate this situation, suppose a tourist is waiting for a taxi in a city. During this waiting time, she observes five taxis with the numbers $43,24,100,35$, and 85. She assumes that taxis in the city are numbered from 1 to *N*, she is equally likely to observe any numbered taxi at a given time, and observations arei ndependent. She also knows that there cannot be more than 200 taxis in the city.  
+
+#### Solution (a)  
+
+Use R to compute the posterior probabilities of *N* on a grid of values.  
+
+The computation of probabilities of *N* outputs a series of non normalized probabilities over the considered interval. This, obviously, may produce some inconsistency with our constraint about the upper bound of the interval within each the parameter under our analysis is considered to belong to. Therefore, we proceed with the normalization of the probabilities over the considered interval in order to make them sum to one.  
+```{r echo = TRUE, message = FALSE, comment = "", fig.align = "center", fig.height = 3.5, fig.width = 7.5}
+require(ggplot2)
+
+sample <- c(43, 24, 100, 35, 85)
+b      <- 200
+n      <- seq(max(sample), b, 1)
+
+# Normalization;
+norm_prob <- 1/n^max(sample) / sum(1/n^max(sample))
+cat(sum(norm_prob))
+
+ggplot() +
+  
+  # Probabilites;
+  geom_point(aes(x = n, y = norm_prob),
+             size  = 1.5,
+             color = "black") +
+  
+  # Custom labels;
+  labs(title = "Estimation of the upper bound of an uniform distribution",
+       x     = expression(N),
+       y     = "p(N|y[1],...,y[n])") +
+  theme_bw(base_size = 10, base_family = "Times")
+```
+
+#### Solution (b)  
+
+Compute the posterior mean and posterior standard deviation of *N*.  
+
+To compute the posterior mean and standard deviation we weight the values of *N* with the previously normalized probabilities over the considered interval. The estimator of the standard deviation of *N* we'll be using the weighted mean in this case. 
+```{r echo = TRUE, message = FALSE, comment = "", fig.align = "center", fig.height = 3.5, fig.width = 7.5}
+dtf <- data.frame(x = n,
+                  y = norm_prob)
+
+# Weighted mean;
+weighted_mean <- sum(dtf$x * dtf$y)
+cat(weighted_mean)
+
+# Weighted standard deviation;
+cat(sqrt(sum(dtf$y * (dtf$x - weighted_mean)^2)))
+```
+
+#### Solution (c)  
+
+Find the probability that there are more than 150 taxis in the city.  
+
+Having normalized probabilites allows us to sum those associated with values of N greater than 150 in order to find $P(N>150|y_{1},\dots,y_{n})$.  
+```{r echo = TRUE, message = FALSE, comment = "", fig.align = "center", fig.height = 3.5, fig.width = 7.5}
+cat(sum(dtf[which(dtf$x > 150), 2]))
+```
+
+## DAAG EXERCISES {.tabset}
+
+### Chapter 7 {.tabset}
+
+#### Exercise 2
+
+Use `anova()` to compare the two models:
+```
+roller.lm <- lm(depression~weight, data=roller)
+roller.lm2 <- lm(depression~weight+I(weight^2), data=roller)
+```
+Is there any justification for including the squared term?
+
+##### Solution
+
+```{r}
+roller.lm <- lm(depression~weight, data=roller)
+roller.lm2 <- lm(depression~weight+I(weight^2), data=roller)
+anova(roller.lm, roller.lm2) #P-f test- very high
+```
+
+
+##### Observations
+
+From the $F$ test it is possible to notice that the probability $Pr(F\geq f_{obs})$ is quite high, assuming the null hypothesis $H_0:\beta_{weight^2} = 0$ is true. Thus, as there is no significant difference between the two models we can keep the simpler one, namely `roller.lm`. However let's see the diagnostic plots.
+
+```{r}
+par(mfrow=c(2,2))
+plot(roller.lm)
+par(mfrow=c(2,2))
+plot(roller.lm2)
+```
+In both models it is possible to observe that there is a problematic observation, the one labeled with 10, 5 and 7. The plots `Residuals vs Leverage`, `Scale-Location` and `Normal Q-Q` show clearly that the aforementioned points are suspect. Let's remove it and refit the models.
+```{r}
+remove <- c("5", "7", "10")
+roller_mod <- roller[!rownames(roller) %in% remove,]
+roller.lm <- lm(depression~weight, data=roller_mod)
+roller.lm2 <- lm(depression~weight+I(weight^2), data=roller_mod)
+anova(roller.lm, roller.lm2)
+```
+Now the p-value is even higher than before. This means that the points analysed were not problematic in terms of comparison of the two models.
+
+##### Conclusion
+
+We confirm our initial choice, namely there is no statistical reason to prefer one model to the other.
+
+### Chapter 4 {.tabset}
+
+#### Exercise 11 {.tabset}
+The table UCBAdmissions was discussed in Subsection 2.2.1. The following gives a table
+that adds the 2 × 2 tables of admission data over all departments:
+`sumUCBtotal <- apply(UCBAdmissions, c(1,2), sum)`
+
+##### Solution (a)
+
+```{r}
+UCBAdmissions <- UCBAdmissions
+sumUCBtotal <- apply(UCBAdmissions, c(1,2), sum)
+sumUCBtotal
+```
+What are the names of the two dimensions of this table?
+They are *Gender* and *Admit*.
+
+From the table `UCBAdmissions`, create mosaic plots for each faculty separately. (If
+necessary refer to the code given in the help page for `UCBAdmissions`.)
+
+```{r}
+# (a)
+faculties <- c('A', 'B', 'C', 'D', 'E', 'F')
+for (faculty in faculties) {
+    mosaicplot(UCBAdmissions[,,faculty], main = paste("Faculty", faculty))
+}
+```
+
+##### Solution (b)
+
+Compare the information in the table `UCBtotal` with the result from applying the
+function `mantelhaen.test()` to the table `UCBAdmissions`. Compare the two
+sets of results, and comment on the difference.
+```{r}
+mantelhaen.test(UCBAdmissions)
+sumUCBtotal
+```
+The Mantel-Haenszel test is an inferential test for the association between two binary variables, while controlling for a third confounding nominal variable. Essentially, the test examines the weighted association of a set of $2 × 2$ tables.
+In our case, we check if there is an association between the *Gender* and *Admit* over the different departments.
+The null-hypothesis states that there is no association between the two variables and it is possible to observe that the p-values is equal to $0.2323$, thus we do not reject $H_0$.
+However, the table `sumUCBtotal` shows that there are more admitted males that females, therefore data seems to suggests differently that the result of the Mantel-Haenszel test. Moreover, if we do a $\chi^2$-test on `sumUCBtotal` we obtain the following,
+```{r}
+chisq.test(sumUCBtotal)
+```
+which means that we have a strong evidence against $H_0$ and that we should reject it.
+
+##### Solution (c)
+
+The Mantel–Haenzel test is valid only if the male-to-female odds ratio for admission is
+similar across departments. The following code calculates the relevant odds ratios:
+`apply(UCBAdmissions, 3, function(x) (x[1,1]*x[2,2])/(x[1,2]*x[2,1]))`
+Is the odds ratio consistent across departments? Which department(s) stand(s) out as
+different? What is the nature of the difference?
+
+```{r}
+#(c)
+apply(UCBAdmissions, 3,
+      function(x) (x[1,1]*x[2,2])/(x[1,2]*x[2,1])
+      )
+```
+The odds ration is not consistent across the departments. In particular, department A has a very low odds ratio compared to the others. The nature of this difference can be observed in the mosaic plots showed above, where it is possible to notice that the number of females is significantly lower than the number of males, but the ratio of admitted females is significantly higher than the males one (females: $89/(89+19) = 0.82$, males: $512/(313+512) = 0.62$). This explaines why the Mantel–Haenzel test is not proper for this data as the ratios for each department is not similar across all the departments.
+
+## CS EXERCISES {.tabset}
+
+### Chapter 1 {.tabset}
+
+#### Exercise 7
+
+Let $Y_1$, $Y_2$ and $Y_3$ be independent $N(\mu,\sigma^2)$ r.v.s. Somehow using the matrix
+$$
+A=\left[\begin{array}{cc} 
+1/3 & 1/3 & 1/3\\
+2/3 & -1/3 & -1/3 \\
+-1/3 & 2/3 & -1/3
+\end{array}\right]
+$$
+show that
+$$
+\bar{Y}=\sum_{i=1}^3 Y_i /3
+$$
+and
+$$
+Z=\sum_{i=1}^3 (Y_i - \bar{Y})^2
+$$
+are independent random variables.
+
+##### Solution
+
+Due to the fact that $Y_1$, $Y_2$ and $Y_3$ are independent and distributed as $N(\mu,\sigma^2)$:
+$$
+\bar{Y}\sim N\left(\mu,\frac{\sigma^2}{n}\right).
+$$
+Due to the fact that $Z$ is a function of $Y_1$, $Y_2$ and $Y_3$, only, it is not directly dependent on $\bar{Y}$.
+Hence, calling $Y=(Y_1,Y_2,Y_3)$, we can notice that, from the definition of scalar product:
+$$
+A\cdot Y = \begin{cases} \bar Y \\ 
+Y_1 - \bar{Y}\\
+Y_2 - \bar{Y}
+\end{cases}
+$$
+We can observe that the linear transformation of a multivariate normal random vector also has a multivariate normal distribution. We can extend the same result for $Y_3 - \bar{Y}$, changing simply the order of the basis of the vector. 
+More specifically, for $j=1,2,3$:
+$$
+\begin{align}
+Y_j - \bar{Y} &= \frac{2}{3} Y_j - \frac{1}{3}\sum_{i\neq j} Y_i \\
+&\sim N\left(\frac{2\,\mu}{3}-\frac{2\,\mu}{3}, \, 4\cdot\frac{\sigma^2}{9}+2\cdot\frac{\sigma^2}{9}\right)\\
+&=N\left( 0,\, \frac{2}{3}\,\sigma^2\right) .
+\end{align}
+$$
+Hence, for $j=1,2,3$ we have:
+$$
+\begin{align}
+Cov(Y_j-\bar{Y},\bar{Y}) &= Cov(Y_j,\bar{Y})-Cov(\bar{Y},\bar{Y})\\
+&= \frac{\sigma^2}{3} - \frac{\sigma^2}{3} \\ &= 0. 
+\end{align}
+$$
+Then, we can conclude that $\bar{Y}$ and $\hat{Y}=(Y_1-\bar{Y},Y_2-\bar{Y},Y_3-\bar{Y})$ are independent normal vectors, and so $\bar{Y}$ is independent of $\hat{Y}^T \hat{Y} = n Z$.
+
+
+### Chapter 4 {.tabset}
+
+#### Exercise 4 {.tabset}
+
+Suppose that you have $n$ independent measurements of times between major aircraft disasters, $t_i$, and believe that the probability density function for the $t_i$’s is of the form: $f(t) = ke ^{−\lambda t^2}, t \geq 0$ where $\lambda$ and $k$ are the same for all $i$. 
+
+(a) By considering the normal p.d.f., show that $k = \sqrt{4\lambda/\pi}$. 
+
+(b) Obtain a maximum likelihood estimator for $\lambda$. 
+
+(c) Given observations of $T_i$ (in days) of: $243, 14, 121, 63, 45, 407$ and $34$ use a generalised likelihood ratio test to test $H_0 : \lambda = 10^{−4}$ against the alternative of no restriction on $\lambda$ at the $5%$
+significance level. Note that if $V \sim \chi^2_1$ then $Pr[V ≤ 3.841] = 0.95$.
+
+
+
+##### Solution (a)
+Recalling the definition of normal p.d.f.:
+$$
+f(t) = \frac{1}{\sqrt{2\pi\sigma^2}}e^{-\frac{1}{2}\left(\frac{t-\mu}{\sigma}\right)^2},
+$$
+taking into account that $t\geq 0$, we can procede computing algebric steps to link the normal p.d.f. to the given one.
+$$
+f(t) = \frac{2}{\sqrt{2\pi\sigma^2}} e^{-\frac{1}{2 \sigma^2} \left( t^2 - 2\mu t + \mu^2 \right)}
+$$
+We can also observe that, in the given distribution, there is only a quadratic term for $t$, so we can assume that $\mu = 0$.
+
+Hence:
+$$
+\begin{cases}
+\lambda = \frac{1}{2\sigma^2} \\
+k= \frac{2}{\sqrt{2\pi\sigma^2}}
+\end{cases}
+$$
+substituting the first equation in the following one, we can obtain the result:
+$$
+\begin{aligned}
+k &=\frac{2}{\sqrt{2\pi\left(\frac{1}{2\lambda}\right)}} \\
+&= \sqrt{\frac{4\lambda}{\pi}}.
+\end{aligned}
+$$
+
+##### Solution (b)
+Starting from the previous result, we can assume:
+$$
+t_i \sim f(t) = \sqrt{\frac{4\lambda}{\pi}}e^{-\lambda t^2}
+$$
+where $\lambda$ is the same for all $i$.
+Due to the fact that $t_i$s are i.i.d., from the definition of loglikelihood, we can obtain a good estimator for $\lambda$ calculating:
+$$
+l(\lambda) = \log(f(t|\lambda)).
+$$
+Thus, for $t_i=x_i$, for $i=1,...,n$:
+$$
+\begin{align}
+l(\lambda) &= \sum_{i=1}^n \log(f(x_i|\lambda))\\
+&= \sum_{i=1}^n \log\left(\sqrt{\frac{4\lambda}{\pi}}e^{-\lambda x_i^2}\right)\\
+&= \sum_{i=1}^n \left(\log\left(\sqrt{\frac{4\lambda}{\pi}}\right) -\lambda x_i^2\right)\\
+&= n\log\left(\sqrt{\frac{4\lambda}{\pi}}\right) - \sum_{i=1}^n \lambda x_i^2.
+\end{align}
+$$
+Calculating $\frac{\partial l}{\partial \lambda}$ and equalling it to $0$, we can obtain a maximum likelihood estimator for $\lambda$.
+$$
+\begin{aligned}
+\frac{\partial l}{\partial \lambda} &= \frac{n}{2\lambda} - \sum_{i=1}^n x_i^2 = 0 \\
+\Rightarrow \lambda &= n \,\sum_{i=1}^n \frac{1}{2 x_i^2} . 
+\end{aligned}
+$$
+
+##### Solution (c)
+Starting from the previously calculated formula for the loglikelihood, we are able to compute the likelihood ratio test (LR):
+$$
+V(H_0)=2\left(l(\hat{\lambda})-l(\hat{\lambda_{H_0}})\right)
+$$
+```{r CS4.4, code = readLines("src/CS4.4.R"), echo=TRUE}
+```
+
+###### Conclusions
+
+The obtained small value of the p-value indicates that there is a strong evidence against the null hypothesis.

@@ -1,0 +1,549 @@
+---
+title: "Homework 3"
+author: "Group H - A. Spagnolo, A. Vegliach, V. Plesco, E. Fabrici"
+date: "13/05/2020"
+output:
+  html_document:
+    toc: yes
+  beamer_presentation:
+    highlight: tango
+  include: null
+  ioslides_presentation:
+    highlight: tango
+  pdf_document:
+    highlight: tango
+    keep_tex: yes
+    toc: yes
+  slide_level: 2
+  slidy_presentation:
+    fig.height: 3
+    fig.width: 4
+    highlight: tango
+header-includes:
+- \usepackage{color}
+- \definecolor{Purple}{HTML}{911146}
+- \definecolor{Orange}{HTML}{CF4A30}
+- \setbeamercolor{alerted text}{fg=Orange}
+- \setbeamercolor{frametitle}{bg=Purple}
+institute: University of Udine & University of Trieste
+graphics: yes
+subtitle: 
+fontsize: 10pt
+---
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(fig.align = 'center', warning=FALSE, message=FALSE, fig.asp=0.625, dev='png', global.par = TRUE, dev.args=list(pointsize=10), fig.path = 'figs/')
+library(MASS)
+```
+```{r setup, include=FALSE}
+library(knitr)
+local({
+  hook_plot = knit_hooks$get('plot')
+  knit_hooks$set(plot = function(x, options) {
+    paste0('\n\n----\n\n', hook_plot(x, options))
+  })
+})
+```
+
+## ***LEC*** Exercises
+
+**Exercise 1**
+
+Compute the bootstrap-based confidence interval for the `score` dataset using the studentized method.
+
+```{r echo = TRUE, message = FALSE, comment = "", fig.align = "center", fig.height = 2, fig.width = 7.5}
+set.seed(1)
+
+# Checking computational time required for the naive version;
+start_time <- Sys.time()
+
+score <- read.table("student_score.txt", header = TRUE)
+
+# B: number of total bootstrap samples;
+# s_vect: vector of parameters calculated on bootstrap samples, theta_{b};
+# jack_se: vector of standard errors calculated by implementing the jackknife method;
+# z_vect: vector of standardized values require for the "studentized method";
+B <- 10^4; s_vect <- rep(NA, B); jack_se <- rep(NA, B); z_vect <- rep(NA, B);
+
+# Calculates eigenratio statistic;
+psi_fun <- function(x)
+{
+  eig = eigen(cor(x))$values
+  return(max(eig) / sum(eig))
+}
+
+# Calculates standard error of an estimator by implementing the jackknife method;
+smpl_se <- function(x)
+{
+  for(i in 1:nrow(x))
+  {
+    if(i == 1) {jack_eratio = rep(NA, nrow(x));}
+    
+    jack_eratio[i] = psi_fun(x[-c(i),])
+    
+    if(i == nrow(x)) {return(sqrt(((nrow(x)-1)/nrow(x)) * sum((jack_eratio - mean(jack_eratio))^2)))}
+  }
+}
+
+# Sample estimator + index;
+psi_obs <- psi_fun(score); n <- nrow(score);
+
+# Main function: derives the necessary data for computing the CI;
+for(i in 1:B)
+{
+  ind = sample(1:n, n, replace = TRUE)
+  s_vect[i] = psi_fun(score[ind,]);
+  jack_se[i] = smpl_se(score[ind,]);
+  z_vect[i] = (s_vect[i] - psi_obs)/jack_se[i];
+}
+
+SE_boot <- sd(s_vect); 
+CI      <- psi_obs - quantile(z_vect, probs = c(0.975, 0.025)) * SE_boot
+
+cat(" BOOTSTRAP CONFIDENCE INTERVAL CALCULATIONS\n", 
+    "Based on 1000 bootstrap replicates\n\n",
+    "Intervals :\n", "Level      Studentized\n", "95%    (", 
+    round(CI[1], 3), ", ", round(CI[2], 3), ")\n\n")
+
+end_time <- Sys.time()
+end_time - start_time
+```
+
+**Exercise 2**
+
+Compute bootstrap-based confidence intervals for the `score` dataset using the `boot` package.
+ 
+```{r echo = TRUE, message = FALSE, fig.align = "center", comment = "",  fig.height = 2, fig.width = 7.5}
+set.seed(1)
+
+require(boot)
+require(dplyr)
+require(purrr)
+
+start_time <- Sys.time()
+
+# Calculates eigenratio statistic (similar to the 
+# original but taking also an index for sampling);
+psi_fun <- function(data, indices) 
+{
+  d = data[indices,];
+  eig = eigen(cor(d))$values; return(max(eig) / sum(eig));
+}
+
+# Calculates variance of an estimator by implementing a second-level bootstrap;
+smpl_var <- function(data, indices, its) 
+{
+  d = data[indices,]; n = nrow(d);
+  eig = eigen(cor(d))$values; eratio = max(eig) / sum(eig);
+  
+  v = boot(R = 100, data = d, statistic = psi_fun, parallel = "multicore") %>%
+              pluck("t") %>%
+              var(na.rm = TRUE);
+  c(eratio, v)
+}
+
+boot_t_out <- boot(R = 100, data = score, statistic = smpl_var, parallel = "multicore")
+CI_vec     <- boot.ci(boot_t_out, type = "stud");
+CI_vec
+
+end_time <- Sys.time()
+end_time - start_time
+```
+
+```{r echo = TRUE, message = FALSE, fig.align = "center", fig.height = 5, fig.width = 7.5}
+set.seed(1)
+
+require(ggplot2)
+require(gridExtra)
+
+boot_sample <- rep(NA, B);
+for(i in 1:B)
+{
+  ind = sample(1:n, n, replace = TRUE)
+  boot_sample[i] = psi_fun(score[ind,]);
+}
+
+ggplot() +
+  
+  # Bootstrap Sampling Distribution
+  geom_histogram(aes(x = boot_sample, y = ..density..), color = "black", fill  = "white") +
+  
+  # CI for Naive with Jackknife
+  geom_line(aes(x = rep(CI[1], 2), y = c(0, 6)), color = "indianred", size = 2) +
+  geom_line(aes(x = rep(CI[2], 2), y = c(0, 6)), color = "indianred", size = 2) +
+  
+  # CI for boot() with 2nd-level bootstrap
+  geom_line(aes(x = rep(CI_vec$student[4], 2), y = c(0, 6)), color = "dodgerblue4", size = 2) +
+  geom_line(aes(x = rep(CI_vec$student[5], 2), y = c(0, 6)), color = "dodgerblue4", size = 2) +
+
+  # Custom Label
+  labs(title = "Bootstrap CI",
+       subtitle = "Red: Jackknife,  Blue: 2nd-level empirical bootstrap",
+       x = "x = eigenratio",
+       y = expression(F[X](x))) +
+  theme_bw(base_size = 10, base_family = "Times") 
+```  
+
+```{r echo = TRUE, message = FALSE, fig.align = "center", comment = "",  fig.height = 2, fig.width = 7.5}
+set.seed(1)
+
+require(boot)
+require(dplyr)
+require(purrr)
+
+start_time <- Sys.time()
+
+# Calculates eigenratio statistic (similar to the 
+# original but taking also an index for sampling);
+psi_fun <- function(data, indices) 
+{
+  d = data[indices,];
+  eig = eigen(cor(d))$values; return(max(eig) / sum(eig));
+}
+
+# Calculates variance of an estimator by implementing a second-level bootstrap;
+smpl_var <- function(data, indices, its) 
+{
+  d = data[indices,]; n = nrow(d);
+  eig = eigen(cor(d))$values; eratio = max(eig) / sum(eig);
+  
+  v = boot(R = 1000, data = d, statistic = psi_fun, parallel = "multicore") %>%
+              pluck("t") %>%
+              var(na.rm = TRUE);
+  c(eratio, v)
+}
+
+boot_t_out <- boot(R = 1000, data = score, statistic = smpl_var, parallel = "multicore")
+CI_vec     <- boot.ci(boot_t_out, type = "stud");
+CI_vec
+
+end_time <- Sys.time()
+end_time - start_time
+```
+
+## ***LAB*** Exercises
+
+**Exercise 1**
+
+Use `nlm` to compute the variance for the estimator $\hat{\omega} = (\log( \hat{\gamma} ), \log( \hat{\beta} )$  and `optimHess` for the variance of $\hat{\theta} = (\hat{\gamma}, \hat{\beta})$
+
+**Solution**
+```{r lab_01, code = readLines("src/lab_01_2.R"), echo=TRUE}
+```
+
+**Exercise 2**
+
+The Wald confidence interval with level $1-\alpha$ is defined as:
+$$\hat{\gamma} \pm z_{1-\frac{\alpha}{2}} j_P(\hat{\gamma})^{-\frac{1}{2}}$$
+Compute the Wald confidence interval of level 0.95 and plot the results.
+
+***Solution***
+
+We define and plot the Weibull log-likelihood and we get the MLE for the two parameters using `optim`.
+
+```{r, code=readLines("src/lab_02.R"), echo=TRUE}
+```
+
+We then compute the information matrix, which gives us the standard errors for the two parameters. Then we compute the Wald confidence interval of level 0.95.
+
+```{r, code =readLines("src/lab_02b.R"),echo=TRUE}
+```
+ 
+We can see that the Wald confidence interval of level 0.95 is $[4.45; 9.32]$.
+
+**Exercise 3**
+
+Repeat the steps above — write the profile log-likelihood, plot it and find the deviance confidence intervals — considering this time $\gamma$ as a nuisance parameter and $\beta$ as the parameter of interest.
+
+**Solution**
+
+Let's consider $\beta$ as the parameter of interest and $\gamma$ as the nuisance parameter. We can define the profile log-likelihood as follows:
+$$ l_P(\beta)= \max_{\beta} l(\gamma, \beta; y) = l(\hat\gamma_{\beta}, \beta; y)$$
+where $\hat\gamma_{\beta}$ is the constrained MLE for $\gamma$ ì, with $\beta$.
+
+```{r lab_03, code = readLines("src/lab_03.R"), echo=TRUE}
+```
+ 
+**Exercise 5**
+
+In `sim` in the code above, you find the MCMC output which allows to approximate the posterior distribution of our parameter of interest with $S$ draws of $\theta$. Please, produce an histogram for these random draws $\theta^{(1)},...,\theta^{(S)}$, compute the empirical quantiles, and overlap the true posterior distribution.
+
+```{r echo = TRUE, message = FALSE, results = "hide", fig.align = "center", fig.height = 5, fig.width = 7.5}
+set.seed(1)
+
+require(rstanarm)
+require(bayesplot)
+require(ggplot2)
+require(gridExtra)
+require(rstan)
+
+# True mean;      
+theta_sample <- 2;           
+# Likelihood variance; 
+sigma2 <- 2; 
+# Sample size;
+n <- 10;
+# Prior mean;
+mu <- 7;
+# Prior variance;
+tau2 <- 2
+
+# Generate some data;
+y <- rnorm(n, theta_sample, sqrt(sigma2))
+
+# Posterior mean;
+mu_star <- ((1/tau2) * mu + (n/sigma2) * mean(y))/((1/tau2) + (n/sigma2))
+# Posterior standard deviation;
+sd_star <- sqrt(1/((1/tau2) + (n/sigma2)))
+
+# Launch Stan Model;
+data <- list(N = n, y = y, sigma = sqrt(sigma2), mu = mu, tau = sqrt(tau2))
+fit  <- stan(file = "normal.stan", data = data, chains = 4, iter = 2000)
+sim  <- data.frame(extract(fit))
+```
+
+```{r echo = TRUE, message = FALSE, fig.align = "center", fig.height = 5, fig.width = 7.5, fig.cap = "Left: Histogram of a MCMC sampling, approximating the true posterior distribution (in red). Right: Graphical comparison of the two probability distributions taken into exam. The red line represents the Q-Q line of the true distribution. The black dots represent the percentiles of the MCMC samples' distribution."}
+plot_mcmc <- ggplot() +
+  
+  # theta - MCMC;
+  geom_histogram(data = sim, aes(x = theta, y = ..density..),
+                 colour = "black", 
+                 fill   = "white",
+                 alpha  = 0.5) +
+  
+  # True Posterior;
+  geom_line(aes(x = seq(1, 4.5, 0.01), y = dnorm(seq(1, 4.5, 0.01), mu_star, sd_star)),
+            color = "indianred",
+            size  = 1) +
+  
+  # Custom label;
+  labs(title = "MCMC approximation",
+       x     = "x",
+       y     = expression(F[X](x))) +
+  theme_bw(base_size = 10, base_family = "Times")
+
+emp_quantiles <- ggplot() +
+  
+  # True Posterior quantiles;
+  geom_line(aes(x = qnorm(seq(0.01, 0.99, 0.01), mu_star, sd_star),
+                y = qnorm(seq(0.01, 0.99, 0.01), mu_star, sd_star)),
+            color = "red2") +
+  
+  # theta - MCMC quantiles;
+  geom_point(aes(x = qnorm(seq(0.01, 0.99, 0.01), mu_star, sd_star),
+                 y = as.vector(quantile(sim$theta, seq(0.01, 0.99, 0.01)))),
+             size  = 0.5,
+             color = "black") +
+  
+  # Custom label;
+  labs(title = "Q-Q plot for MCMC distribution",
+       x     = "True quantiles",
+       y     = "Sample quantiles") +
+  theme_bw(base_size = 10, base_family = "Times")
+
+
+grid.arrange(plot_mcmc, emp_quantiles, nrow = 1, ncol = 2)
+```
+
+**Exercise 6**
+ 
+Launch the following line of $R$ code:
+```{}
+posterior <- as.array(fit)
+```
+Use now the `bayesplot` package. Read the help and produce for this example, using the object posterior, the following plots:
+
+* posterior intervals.
+* posterior areas.
+* marginal posterior distributions for the parameters.
+
+Quickly comment.
+
+**Solution**
+
+```{r lab_06_p, code = readLines("src/lab_06_prereq.R"), echo=FALSE, results='hide'}
+```
+```{r lab_06, code = readLines("src/lab_06.R"), echo=TRUE}
+```
+
+The parameter of interest, $\theta$, is the true mean of the $y_i$. After having performed the MCMC simulation, we obtain an estime for the parameter $\theta$.
+
+The first plot represents the posterior uncertainty interval, or credibility interval, for $\theta$. We can see that the value of the posterior mean, represented by the light blue point, is around $2.6$. The thick blue segment shows the 50% interval, that goes from  $2.3$ to $3.8$, whereas the thinner light blue line shows the 90% interval.
+
+The second plot represents the posterior areas. The thick blue line shows the value of the posterior mean. The curve represents the estimated posterior density. The light blue shaded area under the posterior density curve is the 80%  posterior uncertainty intervals. This plot shows all the information represented in the first one and some more, such as the posterior density. 
+
+Finally the third plot represents the marginal posterior density for the parameter $\theta$. Even if it is shown by true posterior areas plot too, in this case it is represented through an histogram. Changing the value of the parameter `binwidth` we can vary the number of bins of the histogram and so how many observations are summarized within each bin.
+
+**Exercise 7**
+
+Suppose you receive $n=15$ phone calls in a day, and you want to build a model to assess their average length. Your likelihood for each call length is $y_i \sim Poisson(\lambda)$. Now, you have to choose the prior $\pi(\lambda)$. Please, tell which of these priors is adequate to describe the problem, and provide a short motivation for each of them:
+
+1) $\pi(\lambda) = Beta(4,2)$;
+2) $\pi(\lambda) = Normal(1,2)$;
+3) $\pi(\lambda) = Gamma(4,2)$;
+
+Now, compute your posterior as $\pi(\lambda | y) \propto L(\lambda;y)\pi(\lambda)$ for the selected prior. If your first choice was correct, you will be able to compute it analitically.
+
+**Solution**
+
+Given that $y_i \sim Poisson(\lambda)$, it is needed that $\lambda > 0$. 
+
+1. The beta distribution guarantees this condition but it also limits the upper bound to 1. So the parameter $\lambda$, that is also the mean of the Possion distribution, would be limited between 0 and 1 and this is not acceptable.
+
+2. The normal distribution does not guarantee the positivity of the parameter so it's not acceptable.
+
+3. The gamma distribution is defined in the interval $[0, + \infty]$. It guarantees that $\lambda > 0$ and it does not limit the upper bound. This one seems to be the best choice.
+
+Let's try to compute analitically the posterior distribution. We know that
+$$
+L(\lambda) = \prod_{i=1}^n e^{- \lambda} \frac{1}{x_i !} \lambda^{x_i} \\
+\text{and so: }\\
+\begin{aligned}
+l(\lambda) &= \sum_{i=1}^n ( -\lambda - \log(x_i!) +x_i \log{\lambda}) \\
+&= -n\lambda + \log{\lambda} \sum_{i=1}^n x_i + C_1 \end{aligned}\\
+Gamma(\lambda | \alpha, \beta) = \frac{\beta^{\alpha}}{\Gamma(\alpha)} \lambda^{\alpha -1} e^{-\beta \lambda}\\
+\text{and so: } \log Gamma(\lambda | \alpha, \beta) = (\alpha -1) \log \lambda - \beta \lambda + C_2
+$$
+
+Hence
+
+$$
+\begin{aligned}
+\log p(\lambda | x) &= l(\lambda) + \log Gamma(\lambda | \alpha, \beta)  - \log p(y) \\
+&= -n\lambda + \log{\lambda} \sum_{i=1}^n x_i +(\alpha -1) \log \lambda - \beta \lambda + C \\
+&= \log \lambda ( \alpha - 1 + \sum_{i=1}^n x_i) - \lambda (\beta + n) + C \\
+&= \log Gamma(\alpha + \sum_{i=1}^n x_i, \beta + n)
+\end{aligned}
+$$
+
+So we can see that the Gamma distribution is the conjugate prior of the Poisson distribution since the posterior is still a Gamma with updated parameters.
+
+Let's visualize this result with R.
+
+```{r lab_7, code = readLines("src/lab_07.R"), echo=TRUE}
+```
+
+**Exercise 8**
+
+Go to this link: [rstan](https://github.com/stan-dev/rstan/wiki/RStan-Getting-Started), and follow the instructions to download and install the `rstan` library. Once you did it succesfully, open the file model called `biparametric.stan, and replace the line:
+
+$$target+ = cauchy\_lpdf(sigma | 0, 2.5);$$
+
+with the following one:
+
+$$target+ = uniform\_lpdf(sigma | 0.1, 10);$$
+Which prior are you now assuming for your parameter $\sigma$? Reproduce the same plots as above and briefly comment.
+
+**Solution**
+
+After having changed the `biparametric.stan` file as requested, we performed the MCMC simulation again.
+
+```{r lab_08, code = readLines("src/lab_08.R"), echo=TRUE}
+```
+
+We are assuming that 
+$$
+y_1,...,y_n \sim \mathbb{N} (\theta; \sigma^2) \\
+\theta \sim Unif(−10,10) \\
+\sigma^2 \sim Unif(0.1, 10)
+$$
+
+The value of $\sigma^2$ during the simulation varies a bit more that the simulation done during the Laboratory. Indeed, thanks to the `traceplot`, we can see that the majority of values are in a wider range, that goes from 1 to 3. Nevertheless the maximum reached value is lower than in the previous case.
+
+The second plot confirms our observation. The shaded area, which represents the 80% interval, is wider than the one represented in the Laboratory.
+
+**Exercise 9**
+
+Reproduce the first plot above for the soccer goals, but this time by replacing Prior 1 with a $Gamma(2,4)$. Then, compute the final Bayes factor matrix (BR_matrix) with this new prior and the other ones unchanged, and comment. Is still Prior 2 favorable over all the others?
+  
+
+***Solution***
+
+```{r, code =readLines("src/lab_09.R"), echo=TRUE}
+```
+This first prior is no more that similar to any of the other ones.
+
+Let's compute the log-posteriors.
+
+```{r, code =readLines("src/lab_09b.R"), echo=TRUE}
+```
+
+Now we want to compute the BF matrix in order to compare the prior distributions.
+
+```{r, code =readLines("src/lab_09.R"), echo=TRUE}
+```
+
+We still get that every prior is favored over Prior 3, and Prior 2 is still favorable over all the others. 
+The only thing that changes is that now Prior 4 should be preferred to Prior 1.
+
+
+**Exercise 10**
+
+Let $y=(1,0,0,1,0,0,0,0,0,1,0,0,1,0)$ collect the results of tossing $N=14$ times an unfair coin, where 1 denotes heads and 0 tails, and $p=Prob(y_i=1)$
+
+* Looking at the `Stan` code for the other models, write a short `Stan` Beta-Binomial model, where $p$ has a $Beta(a,b)$ prior with $a=3$, $b=3$;
+
+* extract the posterior distribution with the function `extract()`;
+
+* produce some plots with the `bayesplot` package and comment;
+
+* compute analitically the posterior distribution and compare it with the `Stan` distribution.
+
+**Solution**
+
+First of all we write a `Stan` code for a Beta-Binomial model as requested.
+
+```{stan, output.var="lab10"}
+data {
+  int <lower=0> N;
+  int <lower=0> n;
+  real <lower=0> a;
+  real <lower=0> b;
+}
+
+parameters {
+  real <lower=0, upper=1> p;
+}
+
+model {
+  target+=binomial_lpmf(n | N, p);
+  target+=beta_lpdf(p|a,b);
+}
+```
+
+```{r lab_10, code = readLines("src/lab_10.R"), echo=TRUE}
+```
+After having performed the MCMC simulation and having extracted the posterior distribution, we produced some plots. From them we can obtain several information about the posterior distribution of the parameter of interest $p$. 
+
+First of all we can see that the posterior mean is around $0.35$. The 90% posterior interval is a bit asymmetrical, being a bit larger on the right side. This means that the distribution has a longer tail on the right side. The second and the third plots confirm this observation. Finally, from the last plot we can see the density posterior distribution estimated from the 4 Markov chains that are quite similar.
+
+Let's compute the posterior distribution analitically.
+$$
+\begin{matrix}
+p(y|p) \sim Bernoulli(p) & p \in [0, 1] \\
+p(p) \sim Beta(p|\alpha, \beta) & \\
+\end{matrix}
+$$
+Let's compute the posterior distribution using the logarithm transformation. We know that
+$$
+L(p) = {N\choose K}  p^K + (1-p)^{N-K} \\
+\text{and so: } l(p) = K \log p + (N-K) \log (1-p) + C_1\\
+Beta(p | \alpha, \beta) = \frac{1}{B(\alpha, \beta)} p^{\alpha -1} (1-p)^{\beta-1} \\
+\text{and so: } \log Beta(p | \alpha, \beta) = (\alpha -1) \log p + (\beta -1) \log (1-p) + C_2
+$$
+Hence
+
+$$
+\begin{aligned}
+\log p(p|y) &= l(p) + \log Beta(p|\alpha, \beta) - \log p(y) \\
+&= K \log p + (N-K) \log (1-p)  + (\alpha -1) \log p + (\beta -1) \log (1-p) + C\\
+&= (K + \alpha -1) \log p + (N - K + \beta -1) \log (1-p) + C \\
+&= \log Beta(p | K+ \alpha , N-K + \beta)\\
+\end{aligned}
+$$
+
+So we know that the Beta distribution is the conjugate prior of the Bernoulli distribution, since the posterior is still a Beta with updated parameters.
+
+Let's compare this analitical result with the result obtained by the MCMC simulation.
+
+```{r lab_10b, code = readLines("src/lab_10b.R"), echo=TRUE}
+```
